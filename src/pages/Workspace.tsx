@@ -1,26 +1,29 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { Code, Eye } from "lucide-react";
+import { Code, Columns2, Eye, GitCompare } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import InputPanel from "@/components/input/InputPanel";
 import AgentProgress from "@/components/agent/AgentProgress";
 import PreviewFrame from "@/components/preview/PreviewFrame";
 import ViewportSwitcher from "@/components/preview/ViewportSwitcher";
+import ComparePanel from "@/components/preview/ComparePanel";
 import CodeEditor from "@/components/code/CodeEditor";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/store/projectStore";
 import type { Viewport } from "@/types/project";
 
-type Tab = "preview" | "code";
+type Tab = "preview" | "code" | "split" | "compare";
 
 const TABS = [
   { value: "preview" as Tab, label: "Preview", icon: Eye },
   { value: "code" as Tab, label: "Code", icon: Code },
+  { value: "split" as Tab, label: "Split", icon: Columns2 },
+  { value: "compare" as Tab, label: "Compare", icon: GitCompare },
 ];
 
 export default function Workspace() {
   const [params] = useSearchParams();
-  const { status, result, error, versions, currentVersion, generate, updateCode, reset } = useProjectStore();
+  const { status, input, result, error, versions, currentVersion, generate, updateCode, reset } = useProjectStore();
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [tab, setTab] = useState<Tab>("preview");
 
@@ -57,12 +60,13 @@ export default function Workspace() {
                     type="button"
                     onClick={() => setTab(t.value)}
                     aria-pressed={tab === t.value}
+                    aria-label={t.label}
                     className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors ${
                       tab === t.value ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
                     }`}
                   >
                     <t.icon className="size-4" />
-                    {t.label}
+                    <span className="hidden sm:inline">{t.label}</span>
                   </button>
                 ))}
               </div>
@@ -72,11 +76,18 @@ export default function Workspace() {
               </div>
             </div>
 
-            {tab === "preview" ? (
-              <PreviewFrame html={code} viewport={viewport} />
-            ) : (
-              <CodeEditor code={code} onChange={updateCode} />
+            {tab === "preview" && <PreviewFrame html={code} viewport={viewport} />}
+
+            {tab === "code" && <CodeEditor code={code} onChange={updateCode} />}
+
+            {tab === "split" && (
+              <div className="grid min-h-0 flex-1 grid-rows-2 gap-3 lg:grid-cols-2 lg:grid-rows-1">
+                <CodeEditor code={code} onChange={updateCode} />
+                <PreviewFrame html={code} viewport="desktop" />
+              </div>
             )}
+
+            {tab === "compare" && <ComparePanel input={input} source={result.sourcePreview} html={code} />}
           </div>
         )}
       </main>
