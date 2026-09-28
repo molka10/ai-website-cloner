@@ -13,6 +13,7 @@ type ProjectState = {
   messages: Message[];
   error: string | null;
   generate: (input: GenerateInput) => Promise<void>;
+  updateCode: (html: string) => void;
   reset: () => void;
 };
 
@@ -49,6 +50,13 @@ export const useProjectStore = create<ProjectState>((set) => ({
       set({ status: "error", error: "Something went wrong. Please try again." });
     }
   },
+
+  updateCode: (html) =>
+    set((state) => {
+      const versions = [...state.versions];
+      versions[state.currentVersion] = html;
+      return { versions };
+    }),
 
   reset: () => set(initialState),
 }));
