@@ -3,7 +3,7 @@ import Navbar from "@/components/layout/Navbar";
 import InputPanel from "@/components/input/InputPanel";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/store/projectStore";
-
+import AgentProgress from "@/components/agent/AgentProgress";
 export default function Workspace() {
   const [params] = useSearchParams();
   const { status, result, error, generate, reset } = useProjectStore();
@@ -23,9 +23,7 @@ export default function Workspace() {
           </div>
         )}
 
-        {status === "generating" && (
-          <p className="py-24 text-center text-lg text-muted-foreground">Generating… (about 3 seconds)</p>
-        )}
+                {status === "generating" && <AgentProgress />}
 
         {status === "ready" && result && (
           <div className="flex flex-col items-center gap-6 py-12 text-center">
