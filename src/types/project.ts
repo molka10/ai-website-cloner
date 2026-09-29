@@ -23,3 +23,11 @@ export type RefineInput = {
 export type Status = "idle" | "generating" | "ready" | "refining" | "error";
 
 export type Viewport = "desktop" | "tablet" | "mobile";
+
+export type SavedProject = {
+  id: string;
+  name: string;
+  savedAt: string;
+  html: string;
+  result: GenerateResult;
+};

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { GenerateInput, GenerateResult, Status } from "@/types/project";
+import type { GenerateInput, GenerateResult, SavedProject, Status } from "@/types/project";
 import { generateSite, refineSite } from "@/services/api";
 
 type Message = { role: "user" | "agent"; text: string };
@@ -17,6 +17,7 @@ type ProjectState = {
   updateCode: (html: string) => void;
   undo: () => void;
   redo: () => void;
+  openProject: (project: SavedProject) => void;
   reset: () => void;
 };
 
@@ -94,6 +95,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   undo: () => set((s) => ({ currentVersion: Math.max(0, s.currentVersion - 1) })),
 
   redo: () => set((s) => ({ currentVersion: Math.min(s.versions.length - 1, s.currentVersion + 1) })),
+
+  openProject: (project) =>
+    set({
+      ...initialState,
+      status: "ready",
+      result: project.result,
+      versions: [project.html],
+      currentVersion: 0,
+      messages: [{ role: "agent", text: `Opened "${project.name}". Ask me for any change.` }],
+    }),
 
   reset: () => set(initialState),
 }));

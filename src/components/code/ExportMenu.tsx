@@ -1,17 +1,24 @@
 import { useState } from "react";
-import { Check, Copy, Download } from "lucide-react";
+import { Check, Copy, Download, Save } from "lucide-react";
 import JSZip from "jszip";
 import { Button } from "@/components/ui/button";
 
-type Props = { code: string; name: string };
+type Props = { code: string; name: string; onSave: () => void };
 
-export default function ExportMenu({ code, name }: Props) {
+export default function ExportMenu({ code, name, onSave }: Props) {
   const [copied, setCopied] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   async function copyCode() {
     await navigator.clipboard.writeText(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleSave() {
+    onSave();
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   }
 
   async function downloadZip() {
@@ -30,6 +37,10 @@ export default function ExportMenu({ code, name }: Props) {
 
   return (
     <div className="flex gap-2">
+      <Button variant="outline" size="sm" onClick={handleSave}>
+        {saved ? <Check className="size-4" /> : <Save className="size-4" />}
+        <span className="hidden sm:inline">{saved ? "Saved" : "Save"}</span>
+      </Button>
       <Button variant="outline" size="sm" onClick={copyCode}>
         {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
         <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>

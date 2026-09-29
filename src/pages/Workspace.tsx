@@ -12,6 +12,7 @@ import CodeEditor from "@/components/code/CodeEditor";
 import ExportMenu from "@/components/code/ExportMenu";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/store/projectStore";
+import { saveProject } from "@/lib/history";
 import type { Viewport } from "@/types/project";
 
 type Tab = "preview" | "code" | "split" | "compare";
@@ -32,6 +33,17 @@ export default function Workspace() {
   const code = versions[currentVersion] ?? "";
   const projectName = input?.kind === "url" ? new URL(input.url).hostname.replace(/\./g, "-") : "my-site";
   const showWorkspace = (status === "ready" || status === "refining") && result;
+
+  function handleSave() {
+    if (!result) return;
+    saveProject({
+      id: result.id,
+      name: projectName,
+      savedAt: new Date().toISOString(),
+      html: code,
+      result,
+    });
+  }
 
   return (
     <>
@@ -79,7 +91,7 @@ export default function Workspace() {
                 <div className={tab === "preview" ? "" : "invisible"}>
                   <ViewportSwitcher value={viewport} onChange={setViewport} />
                 </div>
-                <ExportMenu code={code} name={projectName} />
+                <ExportMenu code={code} name={projectName} onSave={handleSave} />
               </div>
             </div>
 
