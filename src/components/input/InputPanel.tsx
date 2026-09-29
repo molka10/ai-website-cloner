@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import type { GenerateInput } from "@/types/project";
 
-const MAX_SIZE = 5 * 1024 * 1024;
+const MAX_SIZE = 3 * 1024 * 1024;
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 type Props = {

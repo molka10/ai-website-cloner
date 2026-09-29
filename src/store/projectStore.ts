@@ -56,8 +56,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           },
         ],
       });
-    } catch {
-      set({ status: "error", error: "Something went wrong. Please try again." });
+        } catch (e) {
+      set({ status: "error", error: e instanceof Error ? e.message : "Something went wrong. Please try again." });
     }
   },
 
