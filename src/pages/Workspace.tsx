@@ -12,6 +12,7 @@ import CodeEditor from "@/components/code/CodeEditor";
 import ExportMenu from "@/components/code/ExportMenu";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/store/projectStore";
+import { useShortcuts } from "@/hooks/useShortcuts";
 import { saveProject } from "@/lib/history";
 import type { Viewport } from "@/types/project";
 
@@ -26,10 +27,11 @@ const TABS = [
 
 export default function Workspace() {
   const [params] = useSearchParams();
-  const { status, name, input, result, error, versions, currentVersion, generate, updateCode, reset } =
+  const { status, name, input, result, error, versions, currentVersion, generate, updateCode, undo, redo, reset } =
     useProjectStore();
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [tab, setTab] = useState<Tab>("preview");
+  const [justSaved, setJustSaved] = useState(false);
 
   const code = versions[currentVersion] ?? "";
   const showWorkspace = (status === "ready" || status === "refining") && result;
@@ -43,7 +45,11 @@ export default function Workspace() {
       html: code,
       result,
     });
+    setJustSaved(true);
+    window.setTimeout(() => setJustSaved(false), 2000);
   }
+
+  useShortcuts({ enabled: status === "ready", onSave: handleSave, onUndo: undo, onRedo: redo });
 
   return (
     <>
@@ -91,7 +97,7 @@ export default function Workspace() {
                 <div className={tab === "preview" ? "" : "invisible"}>
                   <ViewportSwitcher value={viewport} onChange={setViewport} />
                 </div>
-                <ExportMenu code={code} name={name} onSave={handleSave} />
+                <ExportMenu code={code} name={name} saved={justSaved} onSave={handleSave} />
               </div>
             </div>
 
