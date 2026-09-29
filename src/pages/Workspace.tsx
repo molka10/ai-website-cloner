@@ -9,6 +9,7 @@ import PreviewFrame from "@/components/preview/PreviewFrame";
 import ViewportSwitcher from "@/components/preview/ViewportSwitcher";
 import ComparePanel from "@/components/preview/ComparePanel";
 import CodeEditor from "@/components/code/CodeEditor";
+import ExportMenu from "@/components/code/ExportMenu";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/store/projectStore";
 import type { Viewport } from "@/types/project";
@@ -29,6 +30,7 @@ export default function Workspace() {
   const [tab, setTab] = useState<Tab>("preview");
 
   const code = versions[currentVersion] ?? "";
+  const projectName = input?.kind === "url" ? new URL(input.url).hostname.replace(/\./g, "-") : "my-site";
   const showWorkspace = (status === "ready" || status === "refining") && result;
 
   return (
@@ -73,8 +75,11 @@ export default function Workspace() {
                 ))}
               </div>
 
-              <div className={tab === "preview" ? "" : "invisible"}>
-                <ViewportSwitcher value={viewport} onChange={setViewport} />
+              <div className="flex items-center gap-2">
+                <div className={tab === "preview" ? "" : "invisible"}>
+                  <ViewportSwitcher value={viewport} onChange={setViewport} />
+                </div>
+                <ExportMenu code={code} name={projectName} />
               </div>
             </div>
 
