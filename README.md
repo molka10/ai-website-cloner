@@ -1,75 +1,94 @@
-# React + TypeScript + Vite
+# ReSite — AI Website Cloner
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Paste a link or drop a screenshot, and an AI agent rebuilds the page as clean, responsive, editable code.
 
-Currently, two official plugins are available:
+**Live demo:** https://ai-website-cloner-rho.vercel.app
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+![Landing page](docs/screenshots/landing.png)
 
-## React Compiler
+## Features
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Two inputs:** a website link, or a screenshot (drag and drop, click, or paste with Ctrl+V)
+- **Agent progress:** step-by-step view of what the agent is doing (capture, analysis, code)
+- **Live preview:** sandboxed iframe with desktop / tablet / mobile sizes
+- **Code editor:** Monaco (the VS Code editor), with the preview updating as you type
+- **Split and Compare views:** code next to preview, original next to rebuilt
+- **Chat to refine:** ask for changes, with every version kept (Undo / Redo)
+- **Export:** copy the code or download a .zip
+- **History:** save projects and reopen them later
+- **Dark mode** and **keyboard shortcuts** (Ctrl+S, Ctrl+Z, Ctrl+Y)
 
-## Expanding the ESLint configuration
+![Agent progress](docs/screenshots/progress.png)
+![Workspace](docs/screenshots/workspace.png)
+![Dark mode](docs/screenshots/dark.png)
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## Tech stack
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+| Area | Choice |
+| --- | --- |
+| Framework | React + TypeScript (Vite) |
+| Styling | Tailwind CSS + shadcn/ui |
+| Routing | React Router |
+| State | Zustand |
+| Code editor | Monaco Editor |
+| Export | JSZip |
+| Deployment | Vercel |
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+## How it works
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+The front end talks to a single service file, `src/services/api.ts`. For now it returns **mock data** so the whole interface can be built and tested without a backend. The planned AI agent pipeline is:
 
+1. **Capture** — a headless browser takes screenshots and reads the page structure
+2. **Understand** — a vision model turns the screenshots into a design spec (sections, colors, fonts)
+3. **Plan** — components, design tokens and improvements (accessibility, responsiveness)
+4. **Generate** — code written section by section
+5. **Self-check** — render the result, compare it with the original, fix differences
+
+Swapping the mocks for real `fetch` calls in `api.ts` is the only change the UI needs.
+
+## Getting started
+
+```bash
+git clone https://github.com/molka10/ai-website-cloner.git
+cd ai-website-cloner
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://npmx.dev/package/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://npmx.dev/package/eslint-plugin-react-dom) for React-specific lint rules:
+Then open http://localhost:5173.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## Project structure
 
 ```
+src/
+  components/
+    agent/      AgentProgress, ChatPanel
+    code/       CodeEditor, ExportMenu
+    input/      InputPanel
+    landing/    Hero, HowItWorks, Examples
+    layout/     Navbar, Footer, ThemeToggle
+    preview/    PreviewFrame, ViewportSwitcher, ComparePanel
+    ui/         shadcn components
+  hooks/        useShortcuts
+  lib/          history (localStorage)
+  mocks/        sample AI result
+  pages/        Landing, Workspace, History
+  services/     api.ts (mock API)
+  store/        projectStore (Zustand)
+  types/        shared TypeScript types
+```
+
+## Roadmap
+
+- [ ] Backend: real screenshot capture (Playwright) and AI generation
+- [ ] React + Tailwind output, in addition to plain HTML
+- [ ] User accounts and cloud-saved projects
+- [ ] One-click deploy of generated sites
+
+## Responsible use
+
+ReSite is meant for learning and inspiration. Generated code uses placeholder text and images, not the original site's logos, photos or copy. Login and payment pages should not be rebuilt.
+
+## Author
+
+Louka — engineering student at ESPRIT
