@@ -4,6 +4,7 @@ import { Code, Columns2, Eye, GitCompare } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import InputPanel from "@/components/input/InputPanel";
 import AgentProgress from "@/components/agent/AgentProgress";
+import ChatPanel from "@/components/agent/ChatPanel";
 import PreviewFrame from "@/components/preview/PreviewFrame";
 import ViewportSwitcher from "@/components/preview/ViewportSwitcher";
 import ComparePanel from "@/components/preview/ComparePanel";
@@ -28,6 +29,7 @@ export default function Workspace() {
   const [tab, setTab] = useState<Tab>("preview");
 
   const code = versions[currentVersion] ?? "";
+  const showWorkspace = (status === "ready" || status === "refining") && result;
 
   return (
     <>
@@ -46,8 +48,8 @@ export default function Workspace() {
 
         {status === "generating" && <AgentProgress />}
 
-        {status === "ready" && result && (
-          <div className="flex h-[calc(100vh-7rem)] flex-col gap-3">
+        {showWorkspace && (
+          <div className="flex flex-col gap-3 lg:h-[calc(100vh-7rem)]">
             <div className="flex items-center justify-between gap-2">
               <Button variant="outline" size="sm" onClick={reset}>
                 Start over
@@ -76,18 +78,26 @@ export default function Workspace() {
               </div>
             </div>
 
-            {tab === "preview" && <PreviewFrame html={code} viewport={viewport} />}
-
-            {tab === "code" && <CodeEditor code={code} onChange={updateCode} />}
-
-            {tab === "split" && (
-              <div className="grid min-h-0 flex-1 grid-rows-2 gap-3 lg:grid-cols-2 lg:grid-rows-1">
-                <CodeEditor code={code} onChange={updateCode} />
-                <PreviewFrame html={code} viewport="desktop" />
+            <div className="grid min-h-0 flex-1 gap-3 lg:grid-cols-[320px_1fr]">
+              <div className="order-2 h-96 lg:order-1 lg:h-auto lg:min-h-0">
+                <ChatPanel />
               </div>
-            )}
 
-            {tab === "compare" && <ComparePanel input={input} source={result.sourcePreview} html={code} />}
+              <div className="order-1 flex h-[70vh] min-h-0 flex-col lg:order-2 lg:h-auto">
+                {tab === "preview" && <PreviewFrame html={code} viewport={viewport} />}
+
+                {tab === "code" && <CodeEditor code={code} onChange={updateCode} />}
+
+                {tab === "split" && (
+                  <div className="grid min-h-0 flex-1 grid-rows-2 gap-3 md:grid-cols-2 md:grid-rows-1">
+                    <CodeEditor code={code} onChange={updateCode} />
+                    <PreviewFrame html={code} viewport="desktop" />
+                  </div>
+                )}
+
+                {tab === "compare" && <ComparePanel input={input} source={result.sourcePreview} html={code} />}
+              </div>
+            </div>
           </div>
         )}
       </main>
