@@ -30,7 +30,7 @@ export default function ChatPanel() {
   }
 
   return (
-    <aside className="flex min-h-0 flex-col rounded-xl border">
+    <aside className="flex h-full min-h-0 flex-col rounded-xl border">
       <div className="flex items-center justify-between border-b px-3 py-2">
         <p className="text-sm font-medium">
           Version {currentVersion + 1} of {versions.length}

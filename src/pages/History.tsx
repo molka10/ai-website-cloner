@@ -47,15 +47,14 @@ export default function History() {
                     srcDoc={p.html}
                     sandbox=""
                     tabIndex={-1}
+                    scrolling="no"
                     className="pointer-events-none h-[400%] w-[400%] origin-top-left scale-25 bg-white"
                   />
                 </div>
                 <div className="flex flex-col gap-3 p-4">
                   <div>
                     <h2 className="font-semibold">{p.name}</h2>
-                    <p className="text-xs text-muted-foreground">
-                      Saved {new Date(p.savedAt).toLocaleString()}
-                    </p>
+                    <p className="text-xs text-muted-foreground">Saved {new Date(p.savedAt).toLocaleString()}</p>
                   </div>
                   <div className="flex gap-1">
                     {p.result.analysis.palette.map((color) => (
@@ -67,7 +66,12 @@ export default function History() {
                       <FolderOpen className="size-4" />
                       Open
                     </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleDelete(p.id)} aria-label={`Delete ${p.name}`}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleDelete(p.id)}
+                      aria-label={`Delete ${p.name}`}
+                    >
                       <Trash2 className="size-4" />
                     </Button>
                   </div>

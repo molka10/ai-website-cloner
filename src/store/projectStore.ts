@@ -6,6 +6,7 @@ type Message = { role: "user" | "agent"; text: string };
 
 type ProjectState = {
   status: Status;
+  name: string;
   input: GenerateInput | null;
   result: GenerateResult | null;
   versions: string[];
@@ -23,6 +24,7 @@ type ProjectState = {
 
 const initialState = {
   status: "idle" as Status,
+  name: "",
   input: null,
   result: null,
   versions: [],
@@ -31,11 +33,15 @@ const initialState = {
   error: null,
 };
 
+function nameFromInput(input: GenerateInput) {
+  return input.kind === "url" ? new URL(input.url).hostname.replace(/\./g, "-") : "my-site";
+}
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
   ...initialState,
 
   generate: async (input) => {
-    set({ ...initialState, status: "generating", input });
+    set({ ...initialState, status: "generating", input, name: nameFromInput(input) });
     try {
       const result = await generateSite(input);
       set({
@@ -100,11 +106,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({
       ...initialState,
       status: "ready",
+      name: project.name,
       result: project.result,
       versions: [project.html],
       currentVersion: 0,
       messages: [{ role: "agent", text: `Opened "${project.name}". Ask me for any change.` }],
     }),
 
-  reset: () => set(initialState),
-}));
+    reset: () => set(initialState),
+    }));

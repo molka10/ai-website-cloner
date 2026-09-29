@@ -26,19 +26,19 @@ const TABS = [
 
 export default function Workspace() {
   const [params] = useSearchParams();
-  const { status, input, result, error, versions, currentVersion, generate, updateCode, reset } = useProjectStore();
+  const { status, name, input, result, error, versions, currentVersion, generate, updateCode, reset } =
+    useProjectStore();
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [tab, setTab] = useState<Tab>("preview");
 
   const code = versions[currentVersion] ?? "";
-  const projectName = input?.kind === "url" ? new URL(input.url).hostname.replace(/\./g, "-") : "my-site";
   const showWorkspace = (status === "ready" || status === "refining") && result;
 
   function handleSave() {
     if (!result) return;
     saveProject({
       id: result.id,
-      name: projectName,
+      name,
       savedAt: new Date().toISOString(),
       html: code,
       result,
@@ -91,7 +91,7 @@ export default function Workspace() {
                 <div className={tab === "preview" ? "" : "invisible"}>
                   <ViewportSwitcher value={viewport} onChange={setViewport} />
                 </div>
-                <ExportMenu code={code} name={projectName} onSave={handleSave} />
+                <ExportMenu code={code} name={name} onSave={handleSave} />
               </div>
             </div>
 
