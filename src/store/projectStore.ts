@@ -37,6 +37,10 @@ function nameFromInput(input: GenerateInput) {
   return input.kind === "url" ? new URL(input.url).hostname.replace(/\./g, "-") : "my-site";
 }
 
+function errorText(e: unknown) {
+  return e instanceof Error ? e.message : "Something went wrong. Please try again.";
+}
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
   ...initialState,
 
@@ -56,8 +60,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
           },
         ],
       });
-        } catch (e) {
-      set({ status: "error", error: e instanceof Error ? e.message : "Something went wrong. Please try again." });
+    } catch (e) {
+      set({ status: "error", error: errorText(e) });
     }
   },
 
@@ -75,18 +79,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       });
       set((s) => {
         const kept = s.versions.slice(0, s.currentVersion + 1);
-        const newVersions = [...kept, next.code.html];
+        const newVersions = [...kept, next.html];
         return {
           status: "ready",
           versions: newVersions,
           currentVersion: newVersions.length - 1,
-          messages: [...s.messages, { role: "agent", text: `Done! Version ${newVersions.length} is ready.` }],
+          messages: [...s.messages, { role: "agent", text: `${next.summary} (version ${newVersions.length})` }],
         };
       });
-    } catch {
+    } catch (e) {
       set((s) => ({
         status: "ready",
-        messages: [...s.messages, { role: "agent", text: "Sorry, that didn't work. Please try again." }],
+        messages: [...s.messages, { role: "agent", text: `Sorry — ${errorText(e)}` }],
       }));
     }
   },
@@ -113,5 +117,5 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       messages: [{ role: "agent", text: `Opened "${project.name}". Ask me for any change.` }],
     }),
 
-    reset: () => set(initialState),
-    }));
+  reset: () => set(initialState),
+}));

@@ -1,4 +1,4 @@
-const PROMPT = `You are an expert front-end developer. Recreate the web page shown in this screenshot.
+const GENERATE_PROMPT = `You are an expert front-end developer. Recreate the web page shown in this screenshot.
 
 Rules for the HTML:
 - One complete HTML document, starting with <!DOCTYPE html>, with all CSS in a single <style> tag in the head. No external CSS, no JavaScript, no frameworks.
@@ -13,7 +13,28 @@ Return ONLY a JSON object with these keys:
 - "fonts": array of font family names you used
 - "improvements": array of short sentences describing what you improved`;
 
-type Body = { image?: string; mimeType?: string };
+const REFINE_PROMPT = `You are an expert front-end developer. Below is the current HTML of a web page and a change request from the user.
+
+Apply the change request to the HTML and keep everything else the same.
+
+Rules for the HTML:
+- One complete HTML document, starting with <!DOCTYPE html>, with all CSS in a single <style> tag in the head. No external CSS, no JavaScript, no frameworks.
+- Keep the page responsive and accessible.
+- Keep using neutral placeholders instead of real brand names, logos or photos.
+
+Return ONLY a JSON object with these keys:
+- "html": the full updated HTML document as a string
+- "summary": one short sentence describing what you changed`;
+
+type Body = {
+  action?: "generate" | "refine";
+  image?: string;
+  mimeType?: string;
+  code?: string;
+  message?: string;
+};
+
+type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
 
 type GeminiResponse = {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
@@ -21,17 +42,36 @@ type GeminiResponse = {
 
 const MODELS = [process.env.GEMINI_MODEL || "gemini-flash-latest", "gemini-3.5-flash-lite"];
 
+const MAX_CODE_LENGTH = 200_000;
+const MAX_MESSAGE_LENGTH = 1_000;
+
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function callGemini(model: string, apiKey: string, image: string, mimeType: string) {
+function callGemini(model: string, apiKey: string, parts: Part[]) {
   return fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: mimeType, data: image } }] }],
+      contents: [{ parts }],
       generationConfig: { responseMimeType: "application/json" },
     }),
   });
+}
+
+function buildParts(body: Body): Part[] | string {
+  if (body.action === "refine") {
+    if (!body.code || !body.message?.trim()) return "Please send the current code and a change request.";
+    if (body.code.length > MAX_CODE_LENGTH) return "The page is too large to edit.";
+    if (body.message.length > MAX_MESSAGE_LENGTH) return "The change request is too long.";
+    return [
+      { text: REFINE_PROMPT },
+      { text: `Change request: ${body.message.trim()}` },
+      { text: `Current HTML:\n${body.code}` },
+    ];
+  }
+
+  if (!body.image || !body.mimeType?.startsWith("image/")) return "Please send an image.";
+  return [{ text: GENERATE_PROMPT }, { inline_data: { mime_type: body.mimeType, data: body.image } }];
 }
 
 export default {
@@ -52,15 +92,16 @@ export default {
       return Response.json({ error: "Invalid request." }, { status: 400 });
     }
 
-    if (!body.image || !body.mimeType?.startsWith("image/")) {
-      return Response.json({ error: "Please send an image." }, { status: 400 });
+    const parts = buildParts(body);
+    if (typeof parts === "string") {
+      return Response.json({ error: parts }, { status: 400 });
     }
 
     let res: Response | undefined;
 
     for (const model of MODELS) {
       for (let attempt = 1; attempt <= 2; attempt++) {
-        res = await callGemini(model, apiKey, body.image, body.mimeType);
+        res = await callGemini(model, apiKey, parts);
         if (res.status !== 503) break;
         console.warn(`Gemini ${model} busy (attempt ${attempt})`);
         await wait(1500);
@@ -89,8 +130,7 @@ export default {
     }
 
     const data = (await res.json()) as GeminiResponse;
-    const parts = data.candidates?.[0]?.content?.parts ?? [];
-    const text = parts.map((p) => p.text ?? "").join("");
+    const text = (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
 
     try {
       return Response.json(JSON.parse(text));
