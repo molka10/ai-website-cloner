@@ -7,6 +7,7 @@ type AiResponse = {
   palette?: string[];
   fonts?: string[];
   improvements?: string[];
+  screenshotUrl?: string;
   error?: string;
 };
 
@@ -37,16 +38,21 @@ async function callAi(payload: Record<string, string>): Promise<AiResponse> {
 }
 
 export async function generateSite(input: GenerateInput): Promise<GenerateResult> {
-  if (input.kind === "url") {
-    throw new Error("Rebuilding from a link isn't available yet. Upload a screenshot of the page instead.");
-  }
+  let data: AiResponse;
+  let sourcePreview: string;
 
-  const image = await fileToBase64(input.file);
-  const data = await callAi({ action: "generate", image, mimeType: input.file.type });
+  if (input.kind === "url") {
+    data = await callAi({ action: "url", url: input.url });
+    sourcePreview = data.screenshotUrl ?? "";
+  } else {
+    const image = await fileToBase64(input.file);
+    data = await callAi({ action: "generate", image, mimeType: input.file.type });
+    sourcePreview = URL.createObjectURL(input.file);
+  }
 
   return {
     id: crypto.randomUUID(),
-    sourcePreview: URL.createObjectURL(input.file),
+    sourcePreview,
     analysis: {
       sections: data.sections ?? [],
       palette: data.palette ?? [],
