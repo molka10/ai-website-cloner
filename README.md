@@ -1,6 +1,6 @@
 # ReSite — AI Website Cloner
 
-Paste a link or drop a screenshot, and an AI agent rebuilds the page as clean, responsive, editable code.
+Paste a link or drop a screenshot, and an AI agent rebuilds the page as clean, responsive, editable code. Then refine it by chatting.
 
 **Live demo:** https://ai-website-cloner-rho.vercel.app
 
@@ -9,18 +9,34 @@ Paste a link or drop a screenshot, and an AI agent rebuilds the page as clean, r
 ## Features
 
 - **Two inputs:** a website link, or a screenshot (drag and drop, click, or paste with Ctrl+V)
-- **Agent progress:** step-by-step view of what the agent is doing (capture, analysis, code)
+- **Real AI generation:** a vision model (Google Gemini) turns the page into a single HTML file
+- **Chat to refine:** ask for changes ("make the hero dark", "add a contact form") and the AI edits the real code
 - **Live preview:** sandboxed iframe with desktop / tablet / mobile sizes
 - **Code editor:** Monaco (the VS Code editor), with the preview updating as you type
-- **Split and Compare views:** code next to preview, original next to rebuilt
-- **Chat to refine:** ask for changes, with every version kept (Undo / Redo)
+- **Split and Compare views:** code next to preview, original capture next to rebuilt page
+- **Versions:** every change is kept, with Undo / Redo
 - **Export:** copy the code or download a .zip
-- **History:** save projects and reopen them later
+- **History:** save projects in the browser and reopen them later
 - **Dark mode** and **keyboard shortcuts** (Ctrl+S, Ctrl+Z, Ctrl+Y)
 
 ![Agent progress](docs/screenshots/progress.png)
 ![Workspace](docs/screenshots/workspace.png)
 ![Dark mode](docs/screenshots/dark.png)
+
+## How it works
+
+```
+Browser ──▶ /api/generate (Vercel Function, secret key) ──▶ Microlink (page capture)
+                                                        ──▶ Gemini (vision model)
+        ◀── HTML + sections + palette + improvements ◀──
+```
+
+1. **Capture:** for a link, Microlink opens the page in a headless browser and returns a screenshot. For an uploaded image, this step is skipped.
+2. **Generate:** the screenshot is sent to Gemini with a prompt that asks for one responsive, accessible HTML file, plus the sections, palette and fonts it used.
+3. **Refine:** the chat sends the current code and the request back to Gemini, which returns the updated page and a one-line summary.
+4. **Resilience:** if the model is overloaded (HTTP 503), the function retries, then falls back to a lighter model.
+
+The API key lives only in server-side environment variables. The browser never sees it.
 
 ## Tech stack
 
@@ -32,34 +48,40 @@ Paste a link or drop a screenshot, and an AI agent rebuilds the page as clean, r
 | State | Zustand |
 | Code editor | Monaco Editor |
 | Export | JSZip |
-| Deployment | Vercel |
-
-## How it works
-
-The front end talks to a single service file, `src/services/api.ts`. For now it returns **mock data** so the whole interface can be built and tested without a backend. The planned AI agent pipeline is:
-
-1. **Capture** — a headless browser takes screenshots and reads the page structure
-2. **Understand** — a vision model turns the screenshots into a design spec (sections, colors, fonts)
-3. **Plan** — components, design tokens and improvements (accessibility, responsiveness)
-4. **Generate** — code written section by section
-5. **Self-check** — render the result, compare it with the original, fix differences
-
-Swapping the mocks for real `fetch` calls in `api.ts` is the only change the UI needs.
+| AI model | Google Gemini (Flash) |
+| Page capture | Microlink API |
+| Backend and hosting | Vercel Functions + Vercel |
 
 ## Getting started
+
+You need a free Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey).
 
 ```bash
 git clone https://github.com/molka10/ai-website-cloner.git
 cd ai-website-cloner
 npm install
-npm run dev
 ```
 
-Then open http://localhost:5173.
+Create a `.env.local` file at the root (it is ignored by Git):
+
+```
+GEMINI_API_KEY=your_key_here
+```
+
+Run the site and the API together with the Vercel CLI:
+
+```bash
+npm install -g vercel
+vercel dev
+```
+
+Then open http://localhost:3000. (`npm run dev` only starts the front end, without the `/api` functions.)
 
 ## Project structure
 
 ```
+api/
+  generate.ts   Vercel Function: page capture, AI generation and refinement
 src/
   components/
     agent/      AgentProgress, ChatPanel
@@ -71,23 +93,28 @@ src/
     ui/         shadcn components
   hooks/        useShortcuts
   lib/          history (localStorage)
-  mocks/        sample AI result
   pages/        Landing, Workspace, History
-  services/     api.ts (mock API)
+  services/     api.ts (calls /api/generate)
   store/        projectStore (Zustand)
   types/        shared TypeScript types
 ```
 
+## Limits
+
+- Free tiers: Gemini and Microlink both have daily limits. When they are reached, the app shows a clear message.
+- Some large sites block automated captures. Uploading a screenshot works instead.
+- Generated pages are plain HTML and CSS (no React output yet).
+
 ## Roadmap
 
-- [ ] Backend: real screenshot capture (Playwright) and AI generation
 - [ ] React + Tailwind output, in addition to plain HTML
+- [ ] Self-check loop: render the result, compare it with the original, fix differences
 - [ ] User accounts and cloud-saved projects
 - [ ] One-click deploy of generated sites
 
 ## Responsible use
 
-ReSite is meant for learning and inspiration. Generated code uses placeholder text and images, not the original site's logos, photos or copy. Login and payment pages should not be rebuilt.
+ReSite is meant for learning and inspiration. The AI is instructed to replace brand names, logos, photos and real text with neutral placeholders, and login, account and payment pages are refused. Always check generated pages before using them.
 
 ## Author
 
