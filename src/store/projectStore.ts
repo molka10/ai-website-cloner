@@ -1,12 +1,14 @@
 import { create } from "zustand";
 import type { CapturedImage, GenerateInput, GenerateResult, SavedProject, Status } from "@/types/project";
-import { checkSite, generateSite, refineSite, type CheckResult } from "@/services/api";
-import { captureHtml } from "@/lib/capture";
+import { checkSite, convertToReact, generateSite, refineSite, type CheckResult } from "@/services/api";
+import { captureHtml, pixelSimilarity } from "@/lib/capture";
 
 export const MAX_CHECK_ROUNDS = 2;
 
 type Message = { role: "user" | "agent"; text: string };
 type Stage = "generate" | "check" | "done";
+type CheckOutcome = CheckResult & { pixelScore: number | null };
+type ReactConversion = { html: string; code: string };
 
 type ProjectState = {
   status: Status;
@@ -21,9 +23,12 @@ type ProjectState = {
   stage: Stage;
   round: number;
   checkLog: string[];
+  reactCode: ReactConversion | null;
+  converting: boolean;
   generate: (input: GenerateInput) => Promise<void>;
   refine: (message: string) => Promise<void>;
   runCheck: () => Promise<void>;
+  convertCurrentToReact: () => Promise<void>;
   updateCode: (html: string) => void;
   undo: () => void;
   redo: () => void;
@@ -44,6 +49,8 @@ const initialState = {
   stage: "done" as Stage,
   round: 0,
   checkLog: [],
+  reactCode: null,
+  converting: false,
 };
 
 function nameFromInput(input: GenerateInput) {
@@ -58,17 +65,33 @@ function plural(n: number, word: string) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
-async function checkOnce(original: CapturedImage, html: string): Promise<CheckResult> {
-  const rebuilt = await captureHtml(html, original.width, original.height);
-  return checkSite(original.data, rebuilt, html);
+async function pixelScoreOf(original: CapturedImage, html: string): Promise<number | null> {
+  try {
+    const rebuilt = await captureHtml(html, original.width, original.height);
+    return await pixelSimilarity(original.data, rebuilt, original.height / original.width);
+  } catch {
+    return null;
+  }
 }
 
-function describeCheck(round: number | null, check: CheckResult) {
+async function checkOnce(original: CapturedImage, html: string): Promise<CheckOutcome> {
+  const rebuilt = await captureHtml(html, original.width, original.height);
+  const pixelScore = await pixelSimilarity(original.data, rebuilt, original.height / original.width).catch(() => null);
+  const check = await checkSite(original.data, rebuilt, html);
+  return { ...check, pixelScore };
+}
+
+function scores(check: CheckOutcome) {
+  const pixels = check.pixelScore === null ? "" : ` · pixels ${check.pixelScore}%`;
+  return `AI ${check.score}/100${pixels}`;
+}
+
+function describeCheck(round: number | null, check: CheckOutcome) {
   const prefix = round ? `Self-check round ${round}` : "Check";
   if (check.differences.length === 0) {
-    return `${prefix}: similarity ${check.score}/100, nothing to fix.`;
+    return `${prefix} (${scores(check)}): nothing to fix.`;
   }
-  return `${prefix}: similarity ${check.score}/100. Fixed ${plural(check.differences.length, "difference")}: ${check.differences.slice(0, 3).join(" · ")}`;
+  return `${prefix} (${scores(check)}): fixed ${plural(check.differences.length, "difference")}: ${check.differences.slice(0, 3).join(" · ")}`;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -87,6 +110,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     const { result, original } = generated;
     let versions = [result.code.html];
+    let firstPixelScore: number | null = null;
     const notes: Message[] = [
       {
         role: "agent",
@@ -101,7 +125,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       const current = versions[versions.length - 1];
       try {
         const check = await checkOnce(original, current);
-        set((s) => ({ checkLog: [...s.checkLog, `Round ${round}: ${check.score}/100`] }));
+        if (round === 1) firstPixelScore = check.pixelScore;
+        set((s) => ({ checkLog: [...s.checkLog, `Round ${round}: ${scores(check)}`] }));
         if (check.differences.length > 0 && check.html !== current) {
           versions = [...versions, check.html];
         }
@@ -110,6 +135,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       } catch (e) {
         notes.push({ role: "agent", text: `Self-check skipped: ${errorText(e)}` });
         break;
+      }
+    }
+
+    if (versions.length > 1 && firstPixelScore !== null) {
+      const finalPixelScore = await pixelScoreOf(original, versions[versions.length - 1]);
+      if (finalPixelScore !== null) {
+        notes.push({
+          role: "agent",
+          text: `Pixel similarity: ${firstPixelScore}% before the self-check, ${finalPixelScore}% after.`,
+        });
       }
     }
 
@@ -179,6 +214,22 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         status: "ready",
         messages: [...s.messages, { role: "agent", text: `Sorry — ${errorText(e)}` }],
       }));
+    }
+  },
+
+  convertCurrentToReact: async () => {
+    const { versions, currentVersion, converting } = get();
+    const html = versions[currentVersion];
+    if (!html || converting) return;
+
+    set({ converting: true });
+    try {
+      const code = await convertToReact(html);
+      set({ reactCode: { html, code } });
+    } catch (e) {
+      set((s) => ({ messages: [...s.messages, { role: "agent", text: `Sorry — React conversion failed: ${errorText(e)}` }] }));
+    } finally {
+      set({ converting: false });
     }
   },
 

@@ -3,6 +3,7 @@ import type { CapturedImage, GenerateInput, GenerateResult, RefineInput } from "
 
 type AiResponse = {
   html?: string;
+  code?: string;
   summary?: string;
   sections?: string[];
   palette?: string[];
@@ -29,10 +30,15 @@ async function callAi(payload: Record<string, string>): Promise<AiResponse> {
 
   const data: AiResponse = await res.json().catch(() => ({ error: "The server returned an invalid response." }));
 
-  if (!res.ok || data.error || !data.html) {
+  if (!res.ok || data.error) {
     throw new Error(data.error ?? "The AI request failed. Please try again.");
   }
   return data;
+}
+
+function requireHtml(data: AiResponse): string {
+  if (!data.html) throw new Error("The AI returned an empty page. Please try again.");
+  return data.html;
 }
 
 export async function generateSite(input: GenerateInput): Promise<Generated> {
@@ -61,7 +67,7 @@ export async function generateSite(input: GenerateInput): Promise<Generated> {
         palette: data.palette ?? [],
         fonts: data.fonts ?? [],
       },
-      code: { html: data.html ?? "" },
+      code: { html: requireHtml(data) },
       improvements: data.improvements ?? [],
     },
   };
@@ -70,7 +76,7 @@ export async function generateSite(input: GenerateInput): Promise<Generated> {
 export async function refineSite(input: RefineInput): Promise<RefineResult> {
   const data = await callAi({ action: "refine", code: input.currentCode, message: input.message });
   return {
-    html: data.html ?? "",
+    html: requireHtml(data),
     summary: data.summary ?? "Done!",
   };
 }
@@ -82,4 +88,10 @@ export async function checkSite(original: string, rebuilt: string, code: string)
     differences: data.differences ?? [],
     html: data.html ?? code,
   };
+}
+
+export async function convertToReact(html: string): Promise<string> {
+  const data = await callAi({ action: "react", code: html });
+  if (!data.code) throw new Error("The AI returned an empty component. Please try again.");
+  return data.code;
 }

@@ -1,3 +1,5 @@
+import { parse } from "@babel/parser";
+
 const HTML_RULES = `Rules for the HTML:
 - One complete HTML document, starting with <!DOCTYPE html>, with all CSS in a single <style> tag in the head. No external CSS, no JavaScript, no frameworks.
 - Responsive (mobile first) and accessible (semantic tags, alt text, good contrast).`;
@@ -7,8 +9,9 @@ const BRANDING_RULES = `Branding rules (very important):
 - Replace brand and company names with a generic name such as "Brand" or "Acme".
 - Replace product, app or service names with generic labels such as "App 1", "Service" or "Product".
 - Replace personal data (usernames, emails, file names, hostnames) with neutral placeholders such as "user", "file.txt" or "host".
+- Never reproduce third-party logos or brand icons (for example Google, Apple, GitHub or social media icons): use a generic icon shape or plain text instead.
 - Replace logos with a simple text logo or a plain shape, and photos with gray boxes that have a short alt text.
-- Before answering, re-read your HTML and replace any real brand, company or personal name that is still there.`;
+- Before answering, re-read your output and replace any real brand, company or personal name that is still there.`;
 
 const GENERATE_PROMPT = `You are an expert front-end developer. Recreate the web page shown in this screenshot.
 Match the layout, sections, colors, font styles and spacing as closely as possible.
@@ -60,8 +63,24 @@ Return ONLY a JSON object with these keys:
 - "differences": array of short sentences describing the visual differences you fixed, most important first (empty if none)
 - "html": the full corrected HTML document as a string`;
 
+const REACT_PROMPT = `You are an expert React and Tailwind CSS developer. Convert the HTML page below into a single React function component written in TypeScript (TSX).
+
+Rules:
+- Export a default function component named Page.
+- Replace all the CSS from the <style> tag with Tailwind CSS utility classes on the elements. Use arbitrary values such as bg-[#0f172a] or text-[15px] when needed to match the design exactly.
+- Keep the same structure, texts and visual result. Keep it responsive and accessible.
+- Use className, self-close void elements, and no external libraries or imports.
+- If the page repeats similar items (cards, links, list rows), define them in an array at the top of the file and map over it.
+- Do not include <html>, <head> or <body>: return only the page content.
+- The code must compile: check every ternary (condition ? a : b), bracket and closing tag before answering.
+
+${BRANDING_RULES}
+
+Return ONLY a JSON object with one key:
+- "code": the full contents of Page.tsx as a string`;
+
 type Body = {
-  action?: "generate" | "refine" | "url" | "check";
+  action?: "generate" | "refine" | "url" | "check" | "react";
   image?: string;
   mimeType?: string;
   code?: string;
@@ -76,6 +95,10 @@ type Part = { text: string } | { inline_data: { mime_type: string; data: string 
 type GeminiResponse = {
   candidates?: { content?: { parts?: { text?: string }[] } }[];
 };
+
+type GeminiResult =
+  | { ok: true; data: Record<string, unknown> }
+  | { ok: false; status: number; detail: string };
 
 type MicrolinkResponse = {
   status?: string;
@@ -104,6 +127,69 @@ function callGemini(model: string, apiKey: string, parts: Part[]) {
   });
 }
 
+async function askGemini(apiKey: string, parts: Part[]): Promise<GeminiResult> {
+  let res: Response | undefined;
+
+  for (const model of MODELS) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      res = await callGemini(model, apiKey, parts);
+      if (res.status !== 503) break;
+      console.warn(`Gemini ${model} busy (attempt ${attempt})`);
+      await wait(1500);
+    }
+    if (res && res.status !== 503 && res.status !== 429) break;
+    console.warn(`Gemini ${model} unavailable (${res?.status}), trying the next model`);
+  }
+
+  if (!res || !res.ok) {
+    const status = res?.status ?? 502;
+    const detail = res ? (await res.text()).slice(0, 500) : "No response";
+    console.error("Gemini error", status, detail);
+    return { ok: false, status, detail };
+  }
+
+  const json = (await res.json()) as GeminiResponse;
+  const text = (json.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+
+  try {
+    return { ok: true, data: JSON.parse(text) as Record<string, unknown> };
+  } catch {
+    return { ok: false, status: 422, detail: text.slice(0, 500) };
+  }
+}
+
+function errorResponse(failure: { status: number; detail: string }) {
+  const { status, detail } = failure;
+  if (status === 429) {
+    return Response.json(
+      { error: "The free AI quota is used up for now. Wait a minute and try again.", detail },
+      { status: 429 },
+    );
+  }
+  if (status === 503) {
+    return Response.json(
+      { error: "The AI is very busy right now. Please try again in a few minutes.", detail },
+      { status: 503 },
+    );
+  }
+  if (status === 422) {
+    return Response.json(
+      { error: "The AI answered in an unexpected format. Please try again.", detail },
+      { status: 502 },
+    );
+  }
+  return Response.json({ error: "The AI request failed.", detail }, { status: 502 });
+}
+
+function syntaxError(code: string): string | null {
+  try {
+    parse(code, { sourceType: "module", plugins: ["jsx", "typescript"] });
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 async function captureUrl(url: string): Promise<Capture | string> {
   const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&screenshot=true&meta=false`);
   const data = (await res.json().catch(() => ({}))) as MicrolinkResponse;
@@ -127,6 +213,12 @@ async function captureUrl(url: string): Promise<Capture | string> {
 }
 
 function buildParts(body: Body): Part[] | string {
+  if (body.action === "react") {
+    if (!body.code) return "Please send the HTML to convert.";
+    if (body.code.length > MAX_CODE_LENGTH) return "The page is too large to convert.";
+    return [{ text: REACT_PROMPT }, { text: `HTML to convert:\n${body.code}` }];
+  }
+
   if (body.action === "refine") {
     if (!body.code || !body.message?.trim()) return "Please send the current code and a change request.";
     if (body.code.length > MAX_CODE_LENGTH) return "The page is too large to edit.";
@@ -198,55 +290,41 @@ export default {
       return Response.json({ error: parts }, { status: 400 });
     }
 
-    let res: Response | undefined;
+    const answer = await askGemini(apiKey, parts);
+    if (!answer.ok) return errorResponse(answer);
+    let data = answer.data;
 
-    for (const model of MODELS) {
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        res = await callGemini(model, apiKey, parts);
-        if (res.status !== 503) break;
-        console.warn(`Gemini ${model} busy (attempt ${attempt})`);
-        await wait(1500);
+    if (body.action === "react") {
+      const code = typeof data.code === "string" ? data.code : "";
+      const problem = syntaxError(code);
+
+      if (problem) {
+        console.warn("React code has a syntax error, asking for a fix:", problem);
+        const retry = await askGemini(apiKey, [
+          ...parts,
+          {
+            text: `Your previous answer had this syntax error: ${problem}\n\nHere is the code you returned:\n${code}\n\nFix the error and return the same JSON format.`,
+          },
+        ]);
+        if (!retry.ok) return errorResponse(retry);
+
+        const fixed = typeof retry.data.code === "string" ? retry.data.code : "";
+        if (syntaxError(fixed)) {
+          return Response.json(
+            { error: "The AI produced invalid React code twice. Please try again." },
+            { status: 502 },
+          );
+        }
+        data = retry.data;
       }
-      if (res && res.status !== 503 && res.status !== 429) break;
-      console.warn(`Gemini ${model} unavailable (${res?.status}), trying the next model`);
     }
 
-    if (!res || !res.ok) {
-      const status = res?.status ?? 502;
-      const detail = res ? (await res.text()).slice(0, 500) : "No response";
-      console.error("Gemini error", status, detail);
-
-      if (status === 429) {
-        return Response.json(
-          { error: "The free AI quota is used up for now. Wait a minute and try again.", detail },
-          { status: 429 },
-        );
-      }
-      if (status === 503) {
-        return Response.json(
-          { error: "The AI is very busy right now. Please try again in a few minutes.", detail },
-          { status: 503 },
-        );
-      }
-      return Response.json({ error: "The AI request failed.", detail }, { status: 502 });
+    if (capture) {
+      data.screenshotUrl = capture.screenshotUrl;
+      data.screenshotBase64 = capture.image;
+      data.screenshotMime = capture.mimeType;
     }
 
-    const data = (await res.json()) as GeminiResponse;
-    const text = (data.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
-
-    try {
-      const result = JSON.parse(text) as Record<string, unknown>;
-      if (capture) {
-        result.screenshotUrl = capture.screenshotUrl;
-        result.screenshotBase64 = capture.image;
-        result.screenshotMime = capture.mimeType;
-      }
-      return Response.json(result);
-    } catch {
-      return Response.json(
-        { error: "The AI answered in an unexpected format. Please try again.", detail: text.slice(0, 500) },
-        { status: 502 },
-      );
-    }
+    return Response.json(data);
   },
 };

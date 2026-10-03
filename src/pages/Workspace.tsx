@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { Code, Columns2, Eye, GitCompare, ScanSearch } from "lucide-react";
+import { Atom, Code, Columns2, Eye, GitCompare, ScanSearch } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import InputPanel from "@/components/input/InputPanel";
 import AgentProgress from "@/components/agent/AgentProgress";
@@ -10,19 +10,21 @@ import ViewportSwitcher from "@/components/preview/ViewportSwitcher";
 import ComparePanel from "@/components/preview/ComparePanel";
 import CodeEditor from "@/components/code/CodeEditor";
 import ExportMenu from "@/components/code/ExportMenu";
+import ReactPanel from "@/components/code/ReactPanel";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/store/projectStore";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { saveProject } from "@/lib/history";
 import type { Viewport } from "@/types/project";
 
-type Tab = "preview" | "code" | "split" | "compare";
+type Tab = "preview" | "code" | "split" | "compare" | "react";
 
 const TABS = [
   { value: "preview" as Tab, label: "Preview", icon: Eye },
   { value: "code" as Tab, label: "Code", icon: Code },
   { value: "split" as Tab, label: "Split", icon: Columns2 },
   { value: "compare" as Tab, label: "Compare", icon: GitCompare },
+  { value: "react" as Tab, label: "React", icon: Atom },
 ];
 
 export default function Workspace() {
@@ -145,6 +147,8 @@ export default function Workspace() {
                 )}
 
                 {tab === "compare" && <ComparePanel input={input} source={result.sourcePreview} html={code} />}
+
+                {tab === "react" && <ReactPanel />}
               </div>
             </div>
           </div>

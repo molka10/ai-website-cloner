@@ -1,10 +1,16 @@
 import { toJpeg } from "html-to-image";
+import pixelmatch from "pixelmatch";
 import type { CapturedImage } from "@/types/project";
 
-export async function imageToBase64(src: string, maxWidth = 1280, maxHeight = 3000): Promise<CapturedImage> {
+async function loadImage(src: string): Promise<HTMLImageElement> {
   const img = new Image();
   img.src = src;
   await img.decode();
+  return img;
+}
+
+export async function imageToBase64(src: string, maxWidth = 1280, maxHeight = 3000): Promise<CapturedImage> {
+  const img = await loadImage(src);
 
   const scale = Math.min(1, maxWidth / img.naturalWidth);
   const width = Math.round(img.naturalWidth * scale);
@@ -56,4 +62,30 @@ export async function captureHtml(html: string, width = 1280, height = 800): Pro
   } finally {
     iframe.remove();
   }
+}
+
+export async function pixelSimilarity(a: string, b: string, aspectRatio: number): Promise<number> {
+  const width = 320;
+  const height = Math.max(1, Math.round(width * aspectRatio));
+
+  const [imgA, imgB] = await Promise.all([
+    loadImage(`data:image/jpeg;base64,${a}`),
+    loadImage(`data:image/jpeg;base64,${b}`),
+  ]);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Could not compare the images.");
+
+  ctx.drawImage(imgA, 0, 0, width, height);
+  const dataA = ctx.getImageData(0, 0, width, height);
+
+  ctx.clearRect(0, 0, width, height);
+  ctx.drawImage(imgB, 0, 0, width, height);
+  const dataB = ctx.getImageData(0, 0, width, height);
+  const different = pixelmatch(dataA.data, dataB.data, undefined, width, height, { threshold: 0.2 });
+  return Math.round((1 - different / (width * height)) * 100);
 }
