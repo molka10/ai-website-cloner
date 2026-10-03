@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { buttonVariants } from "@/components/ui/button";
 import ThemeToggle from "@/components/layout/ThemeToggle";
+import AuthButton from "@/components/layout/AuthButton";
 
 export default function Navbar() {
   return (
@@ -19,6 +20,7 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
+          <AuthButton />
           <Link to="/app" className={buttonVariants({ size: "sm" })}>
             Try it
           </Link>

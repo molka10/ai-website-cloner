@@ -13,6 +13,7 @@ import ExportMenu from "@/components/code/ExportMenu";
 import ReactPanel from "@/components/code/ReactPanel";
 import { Button } from "@/components/ui/button";
 import { useProjectStore } from "@/store/projectStore";
+import { useAuthStore } from "@/store/authStore";
 import { useShortcuts } from "@/hooks/useShortcuts";
 import { saveProject } from "@/lib/history";
 import type { Viewport } from "@/types/project";
@@ -45,6 +46,7 @@ export default function Workspace() {
     redo,
     reset,
   } = useProjectStore();
+  const uid = useAuthStore((s) => s.user?.uid ?? null);
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [tab, setTab] = useState<Tab>("preview");
   const [justSaved, setJustSaved] = useState(false);
@@ -52,17 +54,21 @@ export default function Workspace() {
   const code = versions[currentVersion] ?? "";
   const showWorkspace = (status === "ready" || status === "refining") && result;
 
-  function handleSave() {
+  async function handleSave() {
     if (!result) return;
-    saveProject({
-      id: result.id,
-      name,
-      savedAt: new Date().toISOString(),
-      html: code,
-      result,
-    });
-    setJustSaved(true);
-    window.setTimeout(() => setJustSaved(false), 2000);
+    try {
+      await saveProject(uid, {
+        id: result.id,
+        name,
+        savedAt: new Date().toISOString(),
+        html: code,
+        result,
+      });
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2000);
+    } catch (e) {
+      alert(`Could not save: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   useShortcuts({ enabled: status === "ready", onSave: handleSave, onUndo: undo, onRedo: redo });
