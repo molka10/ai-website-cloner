@@ -1,4 +1,5 @@
-import type { GenerateInput, GenerateResult, RefineInput } from "@/types/project";
+import { imageToBase64 } from "@/lib/capture";
+import type { CapturedImage, GenerateInput, GenerateResult, RefineInput } from "@/types/project";
 
 type AiResponse = {
   html?: string;
@@ -7,20 +8,17 @@ type AiResponse = {
   palette?: string[];
   fonts?: string[];
   improvements?: string[];
+  score?: number;
+  differences?: string[];
   screenshotUrl?: string;
+  screenshotBase64?: string;
+  screenshotMime?: string;
   error?: string;
 };
 
+export type Generated = { result: GenerateResult; original: CapturedImage };
 export type RefineResult = { html: string; summary: string };
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
-    reader.onerror = () => reject(new Error("Could not read the image."));
-    reader.readAsDataURL(file);
-  });
-}
+export type CheckResult = { score: number; differences: string[]; html: string };
 
 async function callAi(payload: Record<string, string>): Promise<AiResponse> {
   const res = await fetch("/api/generate", {
@@ -37,29 +35,35 @@ async function callAi(payload: Record<string, string>): Promise<AiResponse> {
   return data;
 }
 
-export async function generateSite(input: GenerateInput): Promise<GenerateResult> {
+export async function generateSite(input: GenerateInput): Promise<Generated> {
   let data: AiResponse;
+  let original: CapturedImage;
   let sourcePreview: string;
 
   if (input.kind === "url") {
     data = await callAi({ action: "url", url: input.url });
+    if (!data.screenshotBase64) throw new Error("The page capture is missing. Please try again.");
+    original = await imageToBase64(`data:${data.screenshotMime ?? "image/png"};base64,${data.screenshotBase64}`);
     sourcePreview = data.screenshotUrl ?? "";
   } else {
-    const image = await fileToBase64(input.file);
-    data = await callAi({ action: "generate", image, mimeType: input.file.type });
     sourcePreview = URL.createObjectURL(input.file);
+    original = await imageToBase64(sourcePreview);
+    data = await callAi({ action: "generate", image: original.data, mimeType: "image/jpeg" });
   }
 
   return {
-    id: crypto.randomUUID(),
-    sourcePreview,
-    analysis: {
-      sections: data.sections ?? [],
-      palette: data.palette ?? [],
-      fonts: data.fonts ?? [],
+    original,
+    result: {
+      id: crypto.randomUUID(),
+      sourcePreview,
+      analysis: {
+        sections: data.sections ?? [],
+        palette: data.palette ?? [],
+        fonts: data.fonts ?? [],
+      },
+      code: { html: data.html ?? "" },
+      improvements: data.improvements ?? [],
     },
-    code: { html: data.html ?? "" },
-    improvements: data.improvements ?? [],
   };
 }
 
@@ -68,5 +72,14 @@ export async function refineSite(input: RefineInput): Promise<RefineResult> {
   return {
     html: data.html ?? "",
     summary: data.summary ?? "Done!",
+  };
+}
+
+export async function checkSite(original: string, rebuilt: string, code: string): Promise<CheckResult> {
+  const data = await callAi({ action: "check", original, rebuilt, code });
+  return {
+    score: typeof data.score === "number" ? Math.round(data.score) : 0,
+    differences: data.differences ?? [],
+    html: data.html ?? code,
   };
 }

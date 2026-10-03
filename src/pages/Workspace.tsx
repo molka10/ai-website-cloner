@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router";
-import { Code, Columns2, Eye, GitCompare } from "lucide-react";
+import { Code, Columns2, Eye, GitCompare, ScanSearch } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import InputPanel from "@/components/input/InputPanel";
 import AgentProgress from "@/components/agent/AgentProgress";
@@ -27,8 +27,22 @@ const TABS = [
 
 export default function Workspace() {
   const [params] = useSearchParams();
-  const { status, name, input, result, error, versions, currentVersion, generate, updateCode, undo, redo, reset } =
-    useProjectStore();
+  const {
+    status,
+    name,
+    input,
+    result,
+    original,
+    error,
+    versions,
+    currentVersion,
+    generate,
+    updateCode,
+    runCheck,
+    undo,
+    redo,
+    reset,
+  } = useProjectStore();
   const [viewport, setViewport] = useState<Viewport>("desktop");
   const [tab, setTab] = useState<Tab>("preview");
   const [justSaved, setJustSaved] = useState(false);
@@ -71,9 +85,21 @@ export default function Workspace() {
         {showWorkspace && (
           <div className="flex flex-col gap-3 lg:h-[calc(100vh-7rem)]">
             <div className="flex items-center justify-between gap-2">
-              <Button variant="outline" size="sm" onClick={reset}>
-                Start over
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={reset}>
+                  Start over
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={runCheck}
+                  disabled={!original || status !== "ready"}
+                  title={original ? "Compare with the original and fix differences" : "Only available right after a generation"}
+                >
+                  <ScanSearch className="size-4" />
+                  <span className="hidden sm:inline">Check again</span>
+                </Button>
+              </div>
 
               <div className="flex rounded-lg border p-1">
                 {TABS.map((t) => (

@@ -31,3 +31,9 @@ export type SavedProject = {
   html: string;
   result: GenerateResult;
 };
+
+export type CapturedImage = {
+  data: string;
+  width: number;
+  height: number;
+};

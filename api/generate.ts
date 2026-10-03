@@ -1,16 +1,19 @@
+const HTML_RULES = `Rules for the HTML:
+- One complete HTML document, starting with <!DOCTYPE html>, with all CSS in a single <style> tag in the head. No external CSS, no JavaScript, no frameworks.
+- Responsive (mobile first) and accessible (semantic tags, alt text, good contrast).`;
+
 const BRANDING_RULES = `Branding rules (very important):
 - Never copy real brand names, company names, product names, logos, photos or slogans.
 - Replace brand and company names with a generic name such as "Brand" or "Acme".
 - Replace product, app or service names with generic labels such as "App 1", "Service" or "Product".
+- Replace personal data (usernames, emails, file names, hostnames) with neutral placeholders such as "user", "file.txt" or "host".
 - Replace logos with a simple text logo or a plain shape, and photos with gray boxes that have a short alt text.
-- Before answering, re-read your HTML and replace any real brand or company name that is still there.`;
+- Before answering, re-read your HTML and replace any real brand, company or personal name that is still there.`;
 
 const GENERATE_PROMPT = `You are an expert front-end developer. Recreate the web page shown in this screenshot.
+Match the layout, sections, colors, font styles and spacing as closely as possible.
 
-Rules for the HTML:
-- One complete HTML document, starting with <!DOCTYPE html>, with all CSS in a single <style> tag in the head. No external CSS, no JavaScript, no frameworks.
-- Match the layout, sections, colors, font styles and spacing as closely as possible.
-- Make it responsive (mobile first) and accessible (semantic tags, alt text, good contrast).
+${HTML_RULES}
 
 ${BRANDING_RULES}
 
@@ -22,12 +25,9 @@ Return ONLY a JSON object with these keys:
 - "improvements": array of short sentences describing what you improved`;
 
 const REFINE_PROMPT = `You are an expert front-end developer. Below is the current HTML of a web page and a change request from the user.
-
 Apply the change request to the HTML and keep everything else the same.
 
-Rules for the HTML:
-- One complete HTML document, starting with <!DOCTYPE html>, with all CSS in a single <style> tag in the head. No external CSS, no JavaScript, no frameworks.
-- Keep the page responsive and accessible.
+${HTML_RULES}
 
 ${BRANDING_RULES}
 
@@ -35,13 +35,40 @@ Return ONLY a JSON object with these keys:
 - "html": the full updated HTML document as a string
 - "summary": one short sentence describing what you changed`;
 
+const CHECK_PROMPT = `You are a meticulous front-end QA reviewer.
+Image 1 is the ORIGINAL page. Image 2 is a screenshot of our REBUILT page, rendered from the HTML below at the same size.
+
+IMPORTANT: text is NOT part of this review. The rebuilt page uses placeholder texts on purpose.
+- Never change any text in the HTML: no words, names, usernames, file names, commands, numbers or labels.
+- Never list a text or naming difference as a difference.
+- If the only differences are about text, return an empty "differences" array and the HTML unchanged.
+
+Compare only the visual design:
+- layout and alignment, section order, sizes and spacing
+- colors and backgrounds
+- typography (size, weight, style), not the words themselves
+- missing or extra visual elements (panels, columns, buttons, icons, image areas)
+
+Then fix the HTML so the rebuilt page looks closer to the original. Keep everything that already matches.
+
+${HTML_RULES}
+
+${BRANDING_RULES}
+
+Return ONLY a JSON object with these keys:
+- "score": visual similarity from 0 to 100, for layout and style only
+- "differences": array of short sentences describing the visual differences you fixed, most important first (empty if none)
+- "html": the full corrected HTML document as a string`;
+
 type Body = {
-  action?: "generate" | "refine" | "url";
+  action?: "generate" | "refine" | "url" | "check";
   image?: string;
   mimeType?: string;
   code?: string;
   message?: string;
   url?: string;
+  original?: string;
+  rebuilt?: string;
 };
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } };
@@ -55,6 +82,8 @@ type MicrolinkResponse = {
   code?: string;
   data?: { screenshot?: { url?: string } };
 };
+
+type Capture = { image: string; mimeType: string; screenshotUrl: string };
 
 const MODELS = [process.env.GEMINI_MODEL || "gemini-flash-latest", "gemini-3.5-flash-lite"];
 
@@ -75,7 +104,7 @@ function callGemini(model: string, apiKey: string, parts: Part[]) {
   });
 }
 
-async function captureUrl(url: string): Promise<{ image: string; mimeType: string; screenshotUrl: string } | string> {
+async function captureUrl(url: string): Promise<Capture | string> {
   const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&screenshot=true&meta=false`);
   const data = (await res.json().catch(() => ({}))) as MicrolinkResponse;
   const screenshotUrl = data.data?.screenshot?.url;
@@ -109,6 +138,19 @@ function buildParts(body: Body): Part[] | string {
     ];
   }
 
+  if (body.action === "check") {
+    if (!body.original || !body.rebuilt || !body.code) return "Please send both images and the current code.";
+    if (body.code.length > MAX_CODE_LENGTH) return "The page is too large to check.";
+    return [
+      { text: CHECK_PROMPT },
+      { text: "Image 1, the original page:" },
+      { inline_data: { mime_type: "image/jpeg", data: body.original } },
+      { text: "Image 2, our rebuilt page:" },
+      { inline_data: { mime_type: "image/jpeg", data: body.rebuilt } },
+      { text: `Current HTML:\n${body.code}` },
+    ];
+  }
+
   if (!body.image || !body.mimeType?.startsWith("image/")) return "Please send an image.";
   return [{ text: GENERATE_PROMPT }, { inline_data: { mime_type: body.mimeType, data: body.image } }];
 }
@@ -131,7 +173,7 @@ export default {
       return Response.json({ error: "Invalid request." }, { status: 400 });
     }
 
-    let screenshotUrl: string | undefined;
+    let capture: Capture | undefined;
 
     if (body.action === "url") {
       if (!body.url || !/^https?:\/\/.+\..+/.test(body.url)) {
@@ -143,11 +185,11 @@ export default {
           { status: 400 },
         );
       }
-      const capture = await captureUrl(body.url);
-      if (typeof capture === "string") {
-        return Response.json({ error: capture }, { status: 502 });
+      const result = await captureUrl(body.url);
+      if (typeof result === "string") {
+        return Response.json({ error: result }, { status: 502 });
       }
-      screenshotUrl = capture.screenshotUrl;
+      capture = result;
       body = { action: "generate", image: capture.image, mimeType: capture.mimeType };
     }
 
@@ -165,7 +207,8 @@ export default {
         console.warn(`Gemini ${model} busy (attempt ${attempt})`);
         await wait(1500);
       }
-      if (res && res.status !== 503) break;
+      if (res && res.status !== 503 && res.status !== 429) break;
+      console.warn(`Gemini ${model} unavailable (${res?.status}), trying the next model`);
     }
 
     if (!res || !res.ok) {
@@ -193,7 +236,11 @@ export default {
 
     try {
       const result = JSON.parse(text) as Record<string, unknown>;
-      if (screenshotUrl) result.screenshotUrl = screenshotUrl;
+      if (capture) {
+        result.screenshotUrl = capture.screenshotUrl;
+        result.screenshotBase64 = capture.image;
+        result.screenshotMime = capture.mimeType;
+      }
       return Response.json(result);
     } catch {
       return Response.json(
