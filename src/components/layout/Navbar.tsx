@@ -2,6 +2,7 @@ import { Link } from "react-router";
 import { buttonVariants } from "@/components/ui/button";
 import ThemeToggle from "@/components/layout/ThemeToggle";
 import AuthButton from "@/components/layout/AuthButton";
+import { UsageBadge } from "@/components/layout/UsageBadge";
 
 export default function Navbar() {
   return (
@@ -19,6 +20,7 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-2">
+          <UsageBadge />
           <ThemeToggle />
           <AuthButton />
           <Link to="/app" className={buttonVariants({ size: "sm" })}>

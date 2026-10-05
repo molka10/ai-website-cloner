@@ -1,5 +1,6 @@
 import { parse } from "@babel/parser";
 import { verifyUser } from "./_lib/auth.js";
+import { consumeCredit, refundCredit, type Credit } from "./_lib/usage.js";
 
 const HTML_RULES = `Rules for the HTML:
 - One complete HTML document, starting with <!DOCTYPE html>, with all CSS in a single <style> tag in the head. No external CSS, no JavaScript, no frameworks.
@@ -248,6 +249,75 @@ function buildParts(body: Body): Part[] | string {
   return [{ text: GENERATE_PROMPT }, { inline_data: { mime_type: body.mimeType, data: body.image } }];
 }
 
+// Only these actions cost a credit. Refine, check and React export are free follow-ups.
+function isCounted(action: Body["action"]) {
+  return action !== "refine" && action !== "check" && action !== "react";
+}
+
+async function handle(body: Body, apiKey: string): Promise<Response> {
+  let capture: Capture | undefined;
+
+  if (body.action === "url") {
+    if (!body.url || !/^https?:\/\/.+\..+/.test(body.url)) {
+      return Response.json({ error: "Please send a valid link." }, { status: 400 });
+    }
+    if (BLOCKED_PAGES.test(body.url)) {
+      return Response.json(
+        { error: "For safety, login, account and payment pages can't be rebuilt." },
+        { status: 400 },
+      );
+    }
+    const result = await captureUrl(body.url);
+    if (typeof result === "string") {
+      return Response.json({ error: result }, { status: 502 });
+    }
+    capture = result;
+    body = { action: "generate", image: capture.image, mimeType: capture.mimeType };
+  }
+
+  const parts = buildParts(body);
+  if (typeof parts === "string") {
+    return Response.json({ error: parts }, { status: 400 });
+  }
+
+  const answer = await askGemini(apiKey, parts);
+  if (!answer.ok) return errorResponse(answer);
+  let data = answer.data;
+
+  if (body.action === "react") {
+    const code = typeof data.code === "string" ? data.code : "";
+    const problem = syntaxError(code);
+
+    if (problem) {
+      console.warn("React code has a syntax error, asking for a fix:", problem);
+      const retry = await askGemini(apiKey, [
+        ...parts,
+        {
+          text: `Your previous answer had this syntax error: ${problem}\n\nHere is the code you returned:\n${code}\n\nFix the error and return the same JSON format.`,
+        },
+      ]);
+      if (!retry.ok) return errorResponse(retry);
+
+      const fixed = typeof retry.data.code === "string" ? retry.data.code : "";
+      if (syntaxError(fixed)) {
+        return Response.json(
+          { error: "The AI produced invalid React code twice. Please try again." },
+          { status: 502 },
+        );
+      }
+      data = retry.data;
+    }
+  }
+
+  if (capture) {
+    data.screenshotUrl = capture.screenshotUrl;
+    data.screenshotBase64 = capture.image;
+    data.screenshotMime = capture.mimeType;
+  }
+
+  return Response.json(data);
+}
+
 export default {
   async fetch(request: Request) {
     if (request.method !== "POST") {
@@ -278,66 +348,39 @@ export default {
       return Response.json({ error: "Invalid request." }, { status: 400 });
     }
 
-    let capture: Capture | undefined;
-
-    if (body.action === "url") {
-      if (!body.url || !/^https?:\/\/.+\..+/.test(body.url)) {
-        return Response.json({ error: "Please send a valid link." }, { status: 400 });
-      }
-      if (BLOCKED_PAGES.test(body.url)) {
+    // v2: daily limit, counted in PostgreSQL
+    let credit: Credit | undefined;
+    if (isCounted(body.action)) {
+      try {
+        credit = await consumeCredit(uid);
+      } catch (error) {
+        console.error("Usage database error", error);
         return Response.json(
-          { error: "For safety, login, account and payment pages can't be rebuilt." },
-          { status: 400 },
+          { error: "The usage service is unavailable. Please try again later." },
+          { status: 503 },
         );
       }
-      const result = await captureUrl(body.url);
-      if (typeof result === "string") {
-        return Response.json({ error: result }, { status: 502 });
-      }
-      capture = result;
-      body = { action: "generate", image: capture.image, mimeType: capture.mimeType };
-    }
-
-    const parts = buildParts(body);
-    if (typeof parts === "string") {
-      return Response.json({ error: parts }, { status: 400 });
-    }
-
-    const answer = await askGemini(apiKey, parts);
-    if (!answer.ok) return errorResponse(answer);
-    let data = answer.data;
-
-    if (body.action === "react") {
-      const code = typeof data.code === "string" ? data.code : "";
-      const problem = syntaxError(code);
-
-      if (problem) {
-        console.warn("React code has a syntax error, asking for a fix:", problem);
-        const retry = await askGemini(apiKey, [
-          ...parts,
-          {
-            text: `Your previous answer had this syntax error: ${problem}\n\nHere is the code you returned:\n${code}\n\nFix the error and return the same JSON format.`,
-          },
-        ]);
-        if (!retry.ok) return errorResponse(retry);
-
-        const fixed = typeof retry.data.code === "string" ? retry.data.code : "";
-        if (syntaxError(fixed)) {
-          return Response.json(
-            { error: "The AI produced invalid React code twice. Please try again." },
-            { status: 502 },
-          );
-        }
-        data = retry.data;
+      if (!credit.allowed) {
+        return Response.json(
+          { error: `You've used your ${credit.limit} free generations for today. Come back tomorrow!` },
+          { status: 429, headers: { "X-Usage-Used": String(credit.used), "X-Usage-Limit": String(credit.limit) } },
+        );
       }
     }
 
-    if (capture) {
-      data.screenshotUrl = capture.screenshotUrl;
-      data.screenshotBase64 = capture.image;
-      data.screenshotMime = capture.mimeType;
+    const response = await handle(body, apiKey);
+
+    if (!credit) return response;
+
+    // A failed generation gives the credit back.
+    if (!response.ok) {
+      await refundCredit(uid).catch((error) => console.error("Refund failed", error));
+      credit = { ...credit, used: credit.used - 1 };
     }
 
-    return Response.json(data);
+    const headers = new Headers(response.headers);
+    headers.set("X-Usage-Used", String(credit.used));
+    headers.set("X-Usage-Limit", String(credit.limit));
+    return new Response(response.body, { status: response.status, headers });
   },
 };

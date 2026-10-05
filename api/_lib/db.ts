@@ -17,6 +17,7 @@ export function getDb(): Sql {
     max: 5,            // small pool: enough for local dev and serverless
     idle_timeout: 20,  // close idle connections after 20 s
     connect_timeout: 10,
+    prepare: false,    // required by Neon's connection pooler (harmless locally)
   });
 
   return globalForDb.sql;

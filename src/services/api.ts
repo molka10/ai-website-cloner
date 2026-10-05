@@ -1,5 +1,6 @@
 import { imageToBase64 } from "@/lib/capture";
 import { auth } from "@/lib/firebase";
+import { useUsageStore } from "@/store/usageStore";
 import type { CapturedImage, GenerateInput, GenerateResult, RefineInput } from "@/types/project";
 
 type AiResponse = {
@@ -42,6 +43,13 @@ async function callAi(payload: Record<string, string>): Promise<AiResponse> {
     },
     body: JSON.stringify(payload),
   });
+
+  // v2: the server sends today's usage in headers → update the counter
+  const used = res.headers.get("X-Usage-Used");
+  const limit = res.headers.get("X-Usage-Limit");
+  if (used !== null && limit !== null) {
+    useUsageStore.getState().set(Number(used), Number(limit));
+  }
 
   const data: AiResponse = await res.json().catch(() => ({ error: "The server returned an invalid response." }));
 
