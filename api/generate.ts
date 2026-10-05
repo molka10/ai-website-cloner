@@ -1,4 +1,5 @@
 import { parse } from "@babel/parser";
+import { verifyUser } from "./_lib/auth.js";
 
 const HTML_RULES = `Rules for the HTML:
 - One complete HTML document, starting with <!DOCTYPE html>, with all CSS in a single <style> tag in the head. No external CSS, no JavaScript, no frameworks.
@@ -251,6 +252,18 @@ export default {
   async fetch(request: Request) {
     if (request.method !== "POST") {
       return Response.json({ error: "Method not allowed" }, { status: 405 });
+    }
+
+    // v2: only signed-in users can use the AI
+    let uid: string | null;
+    try {
+      uid = await verifyUser(request.headers.get("authorization"));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Server configuration error.";
+      return Response.json({ error: message }, { status: 500 });
+    }
+    if (!uid) {
+      return Response.json({ error: "Please sign in with Google to use ReSite." }, { status: 401 });
     }
 
     const apiKey = process.env.GEMINI_API_KEY;

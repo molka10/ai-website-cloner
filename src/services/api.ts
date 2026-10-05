@@ -1,4 +1,5 @@
 import { imageToBase64 } from "@/lib/capture";
+import { auth } from "@/lib/firebase";
 import type { CapturedImage, GenerateInput, GenerateResult, RefineInput } from "@/types/project";
 
 type AiResponse = {
@@ -21,10 +22,24 @@ export type Generated = { result: GenerateResult; original: CapturedImage };
 export type RefineResult = { html: string; summary: string };
 export type CheckResult = { score: number; differences: string[]; html: string };
 
+// v2: every AI request carries the user's Firebase sign-in token.
+async function authHeader(): Promise<Record<string, string>> {
+  const user = auth?.currentUser;
+  if (!user) {
+    throw new Error("Please sign in with Google to use ReSite.");
+  }
+  // Firebase returns a fresh token automatically when the old one has expired.
+  const token = await user.getIdToken();
+  return { Authorization: `Bearer ${token}` };
+}
+
 async function callAi(payload: Record<string, string>): Promise<AiResponse> {
   const res = await fetch("/api/generate", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...(await authHeader()),
+    },
     body: JSON.stringify(payload),
   });
 
